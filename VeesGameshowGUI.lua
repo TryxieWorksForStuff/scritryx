@@ -424,30 +424,89 @@ end
 local lastStop = 0
 local STOP_SIGNALS = { "Activated", "MouseButton1Click", "MouseButton1Down", "MouseButton1Up" }
 
+local stopStatus = "" -- NUEVO: qué método funcionó (se muestra en el aviso de AutoHide)
+
+-- NUEVO: busca el botón por la ruta; si falla, lo busca por nombre en todo el PlayerGui
+local function findStopButton()
+	local button = player
+	for segment in string.gmatch(CONFIG.StopButtonPath, "[^%.]+") do
+		button = button and button:FindFirstChild(segment)
+		if not button then break end
+	end
+	if button and button ~= player then return button end
+	local name = string.match(CONFIG.StopButtonPath, "([^%.]+)$")
+	local pg = player:FindFirstChild("PlayerGui")
+	return (pg and name) and pg:FindFirstChild(name, true) or nil
+end
+
+-- NUEVO: true si el botón y todos sus padres están visibles
+local function stopButtonShown(button)
+	local current = button
+	while current and current ~= game do
+		if current:IsA("GuiObject") and not current.Visible then return false end
+		if current:IsA("ScreenGui") and not current.Enabled then return false end
+		current = current.Parent
+	end
+	return true
+end
+
 local function pressStopGenerator()
 	if os.clock() - lastStop < CONFIG.StopCooldown then return false end
 	lastStop = os.clock()
 
-	local gc = getconnections -- solo existe en algunos ejecutores; si no, es nil
-	if type(gc) ~= "function" then return false end
-
-	-- Recorre la ruta desde el jugador local
-	local button = player
-	for segment in string.gmatch(CONFIG.StopButtonPath, "[^%.]+") do
-		button = button and button:FindFirstChild(segment)
-		if not button then return false end
+	local button = findStopButton()
+	if not button then
+		stopStatus = "sin boton"
+		return false
 	end
 
-	local fired = false
-	for _, signalName in ipairs(STOP_SIGNALS) do
-		pcall(function()
-			for _, conn in ipairs(gc(button[signalName])) do
-				pcall(function() conn:Fire() end)
-				fired = true
-			end
+	-- Método 1: getconnections (conecta con las funciones del botón)
+	local gc = getconnections
+	if type(gc) == "function" then
+		local fired = false
+		for _, signalName in ipairs(STOP_SIGNALS) do
+			pcall(function()
+				for _, conn in ipairs(gc(button[signalName])) do
+					pcall(function() conn:Fire() end)
+					fired = true
+				end
+			end)
+		end
+		if fired then stopStatus = "gc" return true end
+	end
+
+	-- Método 2: firesignal
+	local fs = firesignal
+	if type(fs) == "function" then
+		local fired = false
+		for _, signalName in ipairs(STOP_SIGNALS) do
+			local ok = pcall(function() fs(button[signalName]) end)
+			fired = fired or ok
+		end
+		if fired then stopStatus = "fs" return true end
+	end
+
+	-- Método 3: fireclick
+	local fc = fireclick
+	if type(fc) == "function" and pcall(function() fc(button) end) then
+		stopStatus = "fc"
+		return true
+	end
+
+	-- Método 4: clic virtual en el centro del botón (solo si se ve en pantalla)
+	if button:IsA("GuiObject") and stopButtonShown(button) then
+		local ok = pcall(function()
+			local vim = game:GetService("VirtualInputManager")
+			local inset = game:GetService("GuiService"):GetGuiInset()
+			local p = button.AbsolutePosition + button.AbsoluteSize / 2 + inset
+			vim:SendMouseButtonEvent(p.X, p.Y, 0, true, game, 0)
+			vim:SendMouseButtonEvent(p.X, p.Y, 0, false, game, 0)
 		end)
+		if ok then stopStatus = "vim" return true end
 	end
-	return fired
+
+	stopStatus = "no pudo"
+	return false
 end
 
 local function runAutoEscape()
@@ -475,7 +534,7 @@ local function runAutoEscape()
 					elseif os.clock() - lastEscape > CONFIG.EscapeCooldown then
 						moveModel(model, CFrame.new(CONFIG.EscapeSpot))
 						lastEscape = os.clock()
-						setEscapeInfo("¡Escondido!", false)
+						setEscapeInfo("¡Escondido! [" .. stopStatus .. "]", false) -- NUEVO: muestra el método usado
 					end
 				elseif os.clock() - lastEscape > 2 then
 					setEscapeInfo(("Monster a %d studs"):format(nearest), true)
