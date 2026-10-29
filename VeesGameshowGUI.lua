@@ -69,6 +69,8 @@ local CONFIG = {
 	EscapeDistance = 25,                               -- distancia monster-jugador que activa la huida (también en el panel)
 	EscapeCooldown = 1.5,                              -- segundos mínimos entre una huida y otra
 	EscapeSpot     = Vector3.new(-70.4, 168.5, 107.6), -- a dónde te teletransporta
+	StopButtonPath = "PlayerGui.ScreenGui.Menu.StopGenerator", -- NUEVO: botón que presiona AutoHide (ruta desde tu Player)
+	StopCooldown   = 1,                                         -- NUEVO: segundos mínimos entre cada presión del botón
 
 	-- Estilo
 	HeaderColor = Color3.fromRGB(160, 255, 70),  -- color del título
@@ -193,9 +195,26 @@ local function posOf(obj)
 	end
 end
 
+-- NUEVO: ruta real = CurrentFloor.<Modelo del mapa>.Monsters (el modelo cambia en cada mapa)
 local function getMonstersFolder()
 	local floor = workspace:FindFirstChild(CONFIG.FloorFolder)
-	return floor and floor:FindFirstChild(CONFIG.MonstersFolder)
+	if not floor then return nil end
+
+	-- 1) Primer Model dentro de CurrentFloor
+	local map = floor:FindFirstChildWhichIsA("Model")
+	local folder = map and map:FindFirstChild(CONFIG.MonstersFolder)
+	if folder then return folder end
+
+	-- 2) Recorre todos los Model hijos buscando Monsters
+	for _, child in ipairs(floor:GetChildren()) do
+		if child:IsA("Model") then
+			local found = child:FindFirstChild(CONFIG.MonstersFolder)
+			if found then return found end
+		end
+	end
+
+	-- 3) Respaldo: ruta vieja CurrentFloor.Monsters
+	return floor:FindFirstChild(CONFIG.MonstersFolder)
 end
 
 local function collectMonsters(container, list)
@@ -401,6 +420,36 @@ local function nearestDistance(pos, positions)
 	return best
 end
 
+-- NUEVO: presiona el botón StopGenerator de la interfaz del juego (con cooldown)
+local lastStop = 0
+local STOP_SIGNALS = { "Activated", "MouseButton1Click", "MouseButton1Down", "MouseButton1Up" }
+
+local function pressStopGenerator()
+	if os.clock() - lastStop < CONFIG.StopCooldown then return false end
+	lastStop = os.clock()
+
+	local gc = getconnections -- solo existe en algunos ejecutores; si no, es nil
+	if type(gc) ~= "function" then return false end
+
+	-- Recorre la ruta desde el jugador local
+	local button = player
+	for segment in string.gmatch(CONFIG.StopButtonPath, "[^%.]+") do
+		button = button and button:FindFirstChild(segment)
+		if not button then return false end
+	end
+
+	local fired = false
+	for _, signalName in ipairs(STOP_SIGNALS) do
+		pcall(function()
+			for _, conn in ipairs(gc(button[signalName])) do
+				pcall(function() conn:Fire() end)
+				fired = true
+			end
+		end)
+	end
+	return fired
+end
+
 local function runAutoEscape()
 	while escapeEnabled do
 		local model = findInGamePlayer()
@@ -409,7 +458,7 @@ local function runAutoEscape()
 		elseif researching then
 			setEscapeInfo("Pausado (Research)", nil)
 		elseif not getMonstersFolder() then
-			setEscapeInfo("Sin CurrentFloor.Monsters", false)
+			setEscapeInfo("No encuentro Monsters", false) -- NUEVO: texto cambiado
 		else
 			local myPos = bodyPos(model)
 			local monsters = getMonsterPositions()
@@ -420,6 +469,7 @@ local function runAutoEscape()
 			else
 				local nearest = nearestDistance(myPos, monsters)
 				if nearest <= CONFIG.EscapeDistance then
+					pressStopGenerator() -- NUEVO: primero presiona StopGenerator
 					if (myPos - CONFIG.EscapeSpot).Magnitude <= 4 then
 						setEscapeInfo("En el punto seguro", true)
 					elseif os.clock() - lastEscape > CONFIG.EscapeCooldown then
