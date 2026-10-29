@@ -5,7 +5,7 @@
 	Ubicación: StarterPlayer > StarterPlayerScripts
 
 	Toda la configuración está en la tabla CONFIG de abajo.
-	IMPORTANTE: quítalo antes de publicar la versión final.
+	IMPORTANTE: quítalo antes de publicar la versión final. -V0.1
 ]]
 
 local CONFIG = {
