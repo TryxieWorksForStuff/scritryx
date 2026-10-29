@@ -1,5 +1,5 @@
 --[[
-	VEE'S GAMESHOW GUI (admin + debug, solo versión de prueba)
+	 SI LO LEES ESTAS UPDATED VEE'S GAMESHOW GUI (admin + debug, solo versión de prueba)
 	Estilo visual basado en DandysUI (uso libre según su autor).
 	Tipo: LocalScript
 	Ubicación: StarterPlayer > StarterPlayerScripts
@@ -10,7 +10,7 @@
 
 local CONFIG = {
 	-- Nombres que ve el usuario
-	PanelName     = "Vee's Gameshow GUI",
+	PanelName     = "Scritryx",
 	AutoButton    = "Auto Prompt",
 	TpButton      = "Tp To Machine",
 	AutoTpButton  = "AutoTPMachine",
@@ -1114,8 +1114,10 @@ local function runAutoAll()
 			setAutoAllInfo("Listo: ve al ele", true)
 			task.wait(0.5)
 		else
-			setAutoAllInfo("1/3 Research", true)
-			researchPhase(allActive)
+			if researchEnabled then -- NUEVO: solo hace Research si el interruptor Research está activado
+				setAutoAllInfo("1/3 Research", true)
+				researchPhase(allActive)
+			end
 			if autoAllEnabled then
 				setAutoAllInfo("2/3 Ítems", true)
 				pickAllItems(allActive)
